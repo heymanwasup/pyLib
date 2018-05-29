@@ -23,49 +23,58 @@ class IOHandler(object):
         obj = super(type(cls),cls).__new__(cls,*args,**kw)
         obj.debug = False
 
+        obj.BindOutput('Debug','Debug Info','/dev/fd/1',isDebug=True)
+        
         obj.BindOutput('Warning', 'Warning 0', '/dev/fd/0')
         obj.BindOutput('Stdout', 'Stdout 1', '/dev/fd/1')
         obj.BindOutput('FBIWarning', 'FBIWarning 2', '/dev/fd/2')
+        
 
         return obj
 
     def SetDebug(debug):
       self.debug = debug
 
-    def BindOutput(self,name,head,output):
+    def BindOutput(self,name,head,output,isDebug=False):
       self.start = inspect.stack()[-2][3]
-      setattr(self, name, self._printToFile(head,output))
+      setattr(self, name, self._printToFile(head,output,isDebug))
 
-    def _printToFile(self,name,fd='/dev/fd/1'):
+    def _printToFile(self,name,fd,isDebug):
         def Print(*args):
-            outStr = self._encoding(name,args)
+            outStr = self._encoding(name,args,isDebug)
             with open(fd,'a') as f:
                 print >>f,outStr
         return Print
 
-    def _encoding(self,name,args):
-      track_back = self._get_traceback()
+    def _encoding(self,name,args,isDebug):
+      track_back,file_path = self._get_traceback(isDebug)
+
       head = '{{0:^{0:}}}'.format(len(name)+4).format('['+name+']')
       length = len(head)
       outStr = '\n' + '-'*length + '\n'
       outStr += '{0:}  {1:}'.format(head,track_back) + '\n'
+      if isDebug:
+        outStr += '{0:}  {1:}'.format(head,file_path) + '\n'
+
       for arg in args:
         outStr += '{0:}  {1:}'.format(head,arg.__str__()) + '\n'
+
       outStr += '-'*length + '\n'
       return outStr
 
-    def _get_traceback(self):
+    def _get_traceback(self,isDebug):
       trace_back = [x[3] for x in inspect.stack()][-1::-1]
+      line_info = ['File {0:}, line {1:}'.format(x[1],x[2]) for x in inspect.stack()][-1::-1]
       for n,itm in enumerate(trace_back):
         if itm == self.start:
           break
       trace_back.insert(n+1, '*{0:}*'.format(type(self).__name__))
       trace_back = trace_back[1:-3]
-      if not self.debug:
+      if not isDebug:
         trace_back = trace_back[n:]
 
       trace_back_str = '.'.join(trace_back)
-      return trace_back_str
+      return trace_back_str,line_info[-3]
 
 class MyParser(argparse.ArgumentParser):
     def error(self, message):
