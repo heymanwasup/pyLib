@@ -21,7 +21,6 @@ import inspect
 class IOHandler(object):
     def __new__(cls,*args,**kw):        
         obj = super(type(cls),cls).__new__(cls,*args,**kw)
-        obj.debug = False
 
         obj.BindOutput('Debug','Debug Info','/dev/fd/1',isDebug=True)
         
@@ -31,9 +30,6 @@ class IOHandler(object):
         
 
         return obj
-
-    def SetDebug(debug):
-      self.debug = debug
 
     def BindOutput(self,name,head,output,isDebug=False):
       self.start = inspect.stack()[-2][3]
