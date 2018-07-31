@@ -8,31 +8,34 @@ import sqlite3 as sql
 
 
 class SampleData(object):
-    def __init__(self):
+    def __init__(self,debug=True):
+        self.debug = debug
         db_samples = './db/SamplesIndo.db'
         db_xsections = './db/XSections.db'
-
+        if self.debug:
+          os.system('rm ./db/XSections.db')
+          os.system('rm ./db/SamplesIndo.db')
         self.DB_SAMPLE = sql.connect(db_samples)
         self.DB_XSECTION = sql.connect(db_xsections)
     def initialize_db_xsection(self):
         cursor = self.DB_XSECTION.cursor()
         KEYS = ['DSID','XSection','kFactor','fEff','Name','Discription']
         cursor.execute('''
-            CREATE TABLE XSECTIONS(
+            CREATE TABLE IF NOT EXISTS XSECTIONS(
                 {0:} INT PRIMARY KEY NOT NULL,
                 {1:} REAL NOT NULL,
                 {2:} REAL NOT NULL,
                 {3:} REAL NOT NULL,
                 {4:} TEXT NOT NULL,
-                {5:} TEXT,
-            );'''.fromat(*KEYS))
+                {5:} TEXT
+            );'''.format(*KEYS))
         path_to_xsection = '/afs/cern.ch/work/c/chenc/CxAODFW/CxAODFramework_branch_master_21.2.37_1_TP/source/FrameworkSub/data/XSections_13TeV.txt'
 
         with open(path_to_xsection,'read') as f:
             data = f.readlines()
 
         keys = ','.join(KEYS)
-        for line in f:            
+        for line in data:            
             n = line.find('#')            
             line = line[:n]
             if len(line)==0:
@@ -40,15 +43,18 @@ class SampleData(object):
             splitted = re.split('[ \t]+', line)
             if splitted[0] == '':
                 splitted = splitted[1:]
+            if len(splitted)<6:
+              print 'skip', splitted
+              continue
             dsid = int(splitted[0])
             xsec = float(splitted[1])
-            kFac = flaot(splitted[2])
+            kFac = float(splitted[2])
             fEff = float(splitted[3])
             name = splitted[4]
             desc = splitted[5]
             cursor.execute('''
                 INSERT INTO XSECTIONS({0:})\
-                VALUES({1:},{2:},{3:},{4},{5},{6});\
+                VALUES({1:},{2:},{3:},{4},"{5}","{6}");\
                 '''.format(keys,dsid,xsec,kFac,fEff,name,desc))
         self.DB_XSECTION.commit()
 
