@@ -79,7 +79,7 @@ class SampleData(object):
         
 
     def fill_period(self,path_to_samples,period):
-        KEYS = ['DSID','SampleName','HistName','Description','Period','Tag','pTag','AFII/FS']
+        KEYS = ['DSID','SampleName','HistName','Description','Period','Tag','pTag','"AFII/FS"']
         files = os.listdir(path_to_samples)
         for f in files:
             path_to_f = os.path.join(path_to_samples,f)
@@ -91,10 +91,9 @@ class SampleData(object):
                 if not os.path.isdir(path_to_sub_f) or not 'group.phys-higgs.mc16_13TeV' in path_to_sub_f:
                     continue
                 dsid,tag,ptag,FSorAFii = self.parse_sample_name(sub_f)
-                values = [dsid,f,hname,description,period,tag,ptag,FSorAFii]
                 cursor = self.DB_XSECTION.cursor()
                 cursor.execute('''
-                    SELECT Name,Description FROM XSections
+                    SELECT Name,Description FROM XSECTIONS
                     WHERE DSID == {0:};
                     '''.format(dsid))
                 res = cursor.fetchall()
@@ -102,6 +101,7 @@ class SampleData(object):
                     hname,description = 'NULL','NULL'
                 else:
                     hname,description = res[0]
+                values = [dsid,f,hname,description,period,tag,ptag,FSorAFii]
                 cursor = self.DB_SAMPLE.cursor()
                 cursor.execute('''
                     INSERT INTO SAMPLES({0:})\
@@ -116,11 +116,12 @@ class SampleData(object):
             FSorAFii = 'AFii'
         else:
             FSorAFii = 'FS'
+        if tag[-1] == '_'
         return dsid,tag,ptag,FSorAFii
 
 
 
 
 sd = SampleData()
-#sd.initialize_db_xsection()
+sd.initialize_db_xsection()
 sd.initialize_db_sample()
