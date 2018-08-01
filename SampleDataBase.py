@@ -23,13 +23,17 @@ class SampleData(object):
         self.fill_db_xsection(self.DB_XSECTION,'XSECTIONS',path_to_xsection)
 
     def update_db_xsection(self):
+        xsection_ftag_tp = '/afs/cern.ch/work/c/chenc/HEP_pyLib/../XSections_FTAG_TP.txt'
+        xsection_ftag_pdf = '/afs/cern.ch/work/c/chenc/bjets_ttbardilepton_PDF/AnalysisTop-21.2.X/grid/TopDataPreparation/XSection-MC15-13TeV.data'        
+        self.update_xsection(xsection_ftag_pdf,flag='PDF')
+        self.update_xsection(xsection_ftag_tp)
+
+    def update_xsection(self,xsection_name,flag=''):
         alt_db = sql.connect(':memory:')
         path_to_xsection = '/afs/cern.ch/work/c/chenc/HEP_pyLib/../XSections_FTAG_TP.txt'
-        self.fill_db_xsection(alt_db,'XSECTIONS_ATL',path_to_xsection)
+        self.fill_db_xsection(alt_db,'XSECTIONS_ATL',path_to_xsection,flag=flag)
         c_a = self.DB_XSECTION.cursor()
         c_b = alt_db.cursor()
-
-
         c_b.execute('SELECT * FROM XSECTIONS_ATL;')
         sKEYS = ','.join(['DSID','XSection','kFactor','fEff','Name','Description'])
         itms_b = c_b.fetchall()
@@ -63,18 +67,18 @@ class SampleData(object):
                     print 'pre    {0:<10} {1:<8.3E} {2:<8.2f} {3:<8.2f} {4:<10} {5:<30}'.format(*itm_a)
                     continue
                     
-    def fill_db_xsection(self,db,table_name,path_to_xsection):
+    def fill_db_xsection(self,db,table_name,path_to_xsection,flag=''):
         cursor = db.cursor()
         KEYS = ['DSID','XSection','kFactor','fEff','Name','Description']
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS {6:}(
-                {0:} INT PRIMARY KEY NOT NULL,
-                {1:} REAL NOT NULL,
-                {2:} REAL NOT NULL,
-                {3:} REAL NOT NULL,
-                {4:} TEXT NOT NULL,
-                {5:} TEXT
-            );'''.format(*(KEYS+[table_name])))
+            CREATE TABLE IF NOT EXISTS {0:}(
+                DSID INT PRIMARY KEY NOT NULL,
+                XSection REAL NOT NULL,
+                kFactor REAL DEFAULT 1,
+                fEff REAL DEFAULT 1,
+                Name TEXT,
+                Description TEXT
+            );'''.format(table_name))
         
         with open(path_to_xsection,'read') as f:
             data = f.readlines()
@@ -87,25 +91,38 @@ class SampleData(object):
             splitted = re.split('[ \t]+', line)
             if splitted[0] == '':
                 splitted = splitted[1:]
-            if len(splitted)<6:
-              print 'skip', splitted
-              continue
-            dsid = int(splitted[0])
-            xsec = float(splitted[1])
-            kFac = float(splitted[2])
-            fEff = float(splitted[3])
-            name = splitted[4]
-            desc = splitted[5]
 
-            cursor.execute('''
-                INSERT INTO {7:}({0:})\
-                VALUES({1:},{2:},{3:},{4},"{5}","{6}");\
-                '''.format(keys,dsid,xsec,kFac,fEff,name,desc,table_name))
-        db.commit()
+            if flag == 'PDF':
+                if len(splitted)<5:
+                    print 'skip',splitted
+                    continue
+                sKEYS = ','.join(['DSID','XSection','kFactor','Description'])
+                dsid = int(splitted[0])
+                xsec = float(splitted[1])
+                kFac = float(splitted[2])
+                desc = splitted[3]
+                cursor.execute('''
+                    INSERT INTO {0:}({1:})\
+                    VALUES(?,?,?,?);
+                    '''.format(table_name,sKEYS),(dsid,xsec,kFac,desc))
+            else:
+                if len(splitted)<6:
+                    print 'skip',splitted
+                    continue      
+                sKEYS = ','.join(['DSID','XSection','kFactor','fEff','Name','Description'])                                      
+                dsid = int(splitted[0])
+                xsec = float(splitted[1])
+                kFac = float(splitted[2])
+                fEff = float(splitted[3])
+                name = splitted[4]
+                desc = splitted[5]
+                cursor.execute('''
+                    INSERT INTO {0:}({1:})\
+                    VALUES(?,?,?,?,?,?);
+                    '''.format(table_name,sKEYS),(dsid,xsec,kFac,fEff,name,desc))
+            db.commit()
 
-
-
-    def initialize_db_sample(self):        
+    def initialize_db_sample(self):
         cursor = self.DB_SAMPLE.cursor()
         KEYS = ['DSID','SampleName','HistName','Description','Period','Tag','pTag','AFII/FS']
         cursor.execute('''
@@ -169,9 +186,6 @@ class SampleData(object):
         def filter_pdf(dsid,FSorAFii):
             if not False:
                 pass
-
-
-
 
 sd = SampleData()
 sd.initialize_db_xsection()
