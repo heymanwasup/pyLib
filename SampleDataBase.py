@@ -19,18 +19,58 @@ class SampleData(object):
         self.DB_XSECTION = sql.connect(db_xsections)
 
     def initialize_db_xsection(self):
-        cursor = self.DB_XSECTION.cursor()
+        path_to_xsection = '/afs/cern.ch/work/c/chenc/CxAODFW/CxAODFramework_branch_master_21.2.37_1_TP/source/FrameworkSub/data/XSections_13TeV.txt'
+        self.fill_db_xsection(self.DB_XSECTION,'XSECTIONS',path_to_xsection)
+
+    def upate_db_xsection(self):
+        alt_db = sql.connect(':memory:')
+        path_to_xsection = ''
+        self.fill_db_xsection(alt_db,'XSECTIONS_ATL',path_to_xsection)
+        c_a = self.DB_XSECTION.cursor()
+        c_b = alt_db.cursor()
+
+
+        c_b.execute('SELECT * FROM XSECTIONS_ATL;')
+        sKEYS = ','.join(['DSID','XSection','kFactor','fEff','Name','Description'])
+        itms_b = c_b.fetchall()
+        for dsid,xsec,kfac,feff,name,description in itms_b:
+            c_a.execute('''
+                SELECT * FROM XSECTIONS
+                WHERE DSID=?;
+                ''',(dsid,))
+            itms_a = c_a.fetchall()
+            if len(itms_a)==0:
+                print dsid,name,description,'not exists, add it!'
+                c_a.execute('''
+                    INSERT INTO XSECTIONS({0:})\
+                    VALUES(?,?,?,?,?,?);\
+                    '''.format(sKEYS),dsid,xsec,kfac,feff,name,description)
+            else:
+                itm_a = itms_a[0]
+                total_xsec_a = itms_a[1]*itms_a[2]*itms_a[3]
+                total_xsec_b = xsec*kfac*feff
+                if abs((total_xsec_a-total_xsec_b)/(total_xsec_b+total_xsec_a))>0.01:
+                    print 'disrepancy founded:'
+                    print dsid,name,description                    
+                    print 'total a',total_xsec_a
+                    print '---'
+                    print itm_a[0],itm_a[4],itm_a[5]
+                    print 'total b',total_xsec_b
+                    raise ValueError
+                    
+    def fill_db_xsection(self,db,table_name,path_to_xsection):
+        cursor = db.cursor()
         KEYS = ['DSID','XSection','kFactor','fEff','Name','Description']
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS XSECTIONS(
+            CREATE TABLE IF NOT EXISTS {6:}(
                 {0:} INT PRIMARY KEY NOT NULL,
                 {1:} REAL NOT NULL,
                 {2:} REAL NOT NULL,
                 {3:} REAL NOT NULL,
                 {4:} TEXT NOT NULL,
                 {5:} TEXT
-            );'''.format(*KEYS))
-        path_to_xsection = '/afs/cern.ch/work/c/chenc/CxAODFW/CxAODFramework_branch_master_21.2.37_1_TP/source/FrameworkSub/data/XSections_13TeV.txt'
+            );'''.format(*(KEYS+[table_name])))
+        
         with open(path_to_xsection,'read') as f:
             data = f.readlines()
         keys = ','.join(KEYS)
@@ -55,7 +95,9 @@ class SampleData(object):
                 INSERT INTO XSECTIONS({0:})\
                 VALUES({1:},{2:},{3:},{4},"{5}","{6}");\
                 '''.format(keys,dsid,xsec,kFac,fEff,name,desc))
-        self.DB_XSECTION.commit()
+        db.commit()
+
+    def update_db_xsection(self):
 
     def initialize_db_sample(self):        
         cursor = self.DB_SAMPLE.cursor()
@@ -71,7 +113,6 @@ class SampleData(object):
             {6:} TEXT,
             "{7:}" TEXT\
             );'''.format(*KEYS))
-
         path_to_16a = '/eos/atlas/atlascerngroupdisk/phys-higgs/HSG5/Run2/VH/CxAOD_r31-10/HIGG2D4_13TeV/CxAOD_31-10_a'
         path_to_16d = '/eos/atlas/atlascerngroupdisk/phys-higgs/HSG5/Run2/VH/CxAOD_r31-10/HIGG2D4_13TeV/CxAOD_31-10_d'
         self.fill_period(path_to_16a,'mc16a')
@@ -119,9 +160,17 @@ class SampleData(object):
         if tag[-1] == '_'
         return dsid,tag,ptag,FSorAFii
 
+    def add_is_used(self):
+        def filter_pdf(dsid,FSorAFii):
+            if not False:
+                pass
+
 
 
 
 sd = SampleData()
 sd.initialize_db_xsection()
+sd.update_db_xsection()
 sd.initialize_db_sample()
+
+#sd.update_db_sample_pdfsample_table()
