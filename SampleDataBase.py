@@ -20,13 +20,14 @@ class SampleData(object):
 
     def initialize_db_xsection(self):
         path_to_xsection = '/afs/cern.ch/work/c/chenc/CxAODFW/CxAODFramework_branch_master_21.2.37_1_TP/source/FrameworkSub/data/XSections_13TeV.txt'
-        self.fill_db_xsection(self.DB_XSECTION,'XSECTIONS',path_to_xsection)
+        self.fill_db_xsection(self.DB_XSECTION,'XSECTIONS',path_to_xsection,'VHbb')
 
     def update_db_xsection(self):
         xsection_ftag_tp = '/afs/cern.ch/work/c/chenc/HEP_pyLib/../XSections_FTAG_TP.txt'
-        xsection_ftag_pdf = '/afs/cern.ch/work/c/chenc/bjets_ttbardilepton_PDF/AnalysisTop-21.2.X/grid/TopDataPreparation/XSection-MC15-13TeV.data'        
+        xsection_ftag_pdf = '/afs/cern.ch/work/c/chenc/bjets_ttbardilepton_PDF/AnalysisTop-21.2.X/grid/TopDataPreparation/XSection-MC15-13TeV.data'
+
         self.update_xsection(xsection_ftag_pdf,flag='PDF')
-        self.update_xsection(xsection_ftag_tp)
+        self.update_xsection(xsection_ftag_tp,flag='TP')
 
     def update_xsection(self,xsection_name,flag=''):
         alt_db = sql.connect(':memory:')
@@ -63,8 +64,9 @@ class SampleData(object):
                 if diff>0.01:
                     print '---'
                     print '{0:.2f}% '.format(100*diff)
-                    print 'now    {0:<10} {1:<8.3E} {2:<8.2f} {3:<8.2f} {4:<10} {5:<30}'.format(dsid,xsec,kfac,feff,name,description)
-                    print 'pre    {0:<10} {1:<8.3E} {2:<8.2f} {3:<8.2f} {4:<10} {5:<30}'.format(*itm_a)
+                    print '{6:<10}    {0:<10} {1:<8.3E} {2:<8.2f} {3:<8.2f} {4:<10} {5:<30}'.format(*(itm_a+['init']))
+                    print '{6:<10}    {0:<10} {1:<8.3E} {2:<8.2f} {3:<8.2f} {4:<10} {5:<30}'.format(dsid,xsec,kfac,feff,name,description,flag)
+                    
                     continue
                     
     def fill_db_xsection(self,db,table_name,path_to_xsection,flag=''):
@@ -94,7 +96,7 @@ class SampleData(object):
 
             if flag == 'PDF':
                 if len(splitted)<5:
-                    print 'skip',splitted
+                    print 'skip (in PDF)',splitted
                     continue
                 sKEYS = ','.join(['DSID','XSection','kFactor','Description'])
                 dsid = int(splitted[0])
@@ -107,7 +109,7 @@ class SampleData(object):
                     '''.format(table_name,sKEYS),(dsid,xsec,kFac,desc))
             else:
                 if len(splitted)<6:
-                    print 'skip',splitted
+                    print 'skip (in %s)'%(flag),splitted
                     continue      
                 sKEYS = ','.join(['DSID','XSection','kFactor','fEff','Name','Description'])                                      
                 dsid = int(splitted[0])
