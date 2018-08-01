@@ -22,9 +22,9 @@ class SampleData(object):
         path_to_xsection = '/afs/cern.ch/work/c/chenc/CxAODFW/CxAODFramework_branch_master_21.2.37_1_TP/source/FrameworkSub/data/XSections_13TeV.txt'
         self.fill_db_xsection(self.DB_XSECTION,'XSECTIONS',path_to_xsection)
 
-    def upate_db_xsection(self):
+    def update_db_xsection(self):
         alt_db = sql.connect(':memory:')
-        path_to_xsection = ''
+        path_to_xsection = '/afs/cern.ch/work/c/chenc/HEP_pyLib/../XSections_FTAG_TP.txt'
         self.fill_db_xsection(alt_db,'XSECTIONS_ATL',path_to_xsection)
         c_a = self.DB_XSECTION.cursor()
         c_b = alt_db.cursor()
@@ -34,6 +34,11 @@ class SampleData(object):
         sKEYS = ','.join(['DSID','XSection','kFactor','fEff','Name','Description'])
         itms_b = c_b.fetchall()
         for dsid,xsec,kfac,feff,name,description in itms_b:
+            if 'h125' in (name+description).lower() or\
+             'ggh' in (name+description).lower() or\
+             'hzz' in (name+description).lower() or\
+             'bba' in (name+description).lower():
+              continue
             c_a.execute('''
                 SELECT * FROM XSECTIONS
                 WHERE DSID=?;
@@ -44,19 +49,19 @@ class SampleData(object):
                 c_a.execute('''
                     INSERT INTO XSECTIONS({0:})\
                     VALUES(?,?,?,?,?,?);\
-                    '''.format(sKEYS),dsid,xsec,kfac,feff,name,description)
+                    '''.format(sKEYS),(dsid,xsec,kfac,feff,name,description))
             else:
                 itm_a = itms_a[0]
-                total_xsec_a = itms_a[1]*itms_a[2]*itms_a[3]
+
+                total_xsec_a = itm_a[1]*itm_a[2]*itm_a[3]
                 total_xsec_b = xsec*kfac*feff
-                if abs((total_xsec_a-total_xsec_b)/(total_xsec_b+total_xsec_a))>0.01:
-                    print 'disrepancy founded:'
-                    print dsid,name,description                    
-                    print 'total a',total_xsec_a
+                diff = 2.*abs((total_xsec_a-total_xsec_b)/(total_xsec_b+total_xsec_a))
+                if diff>0.01:
                     print '---'
-                    print itm_a[0],itm_a[4],itm_a[5]
-                    print 'total b',total_xsec_b
-                    raise ValueError
+                    print '{0:.2f}% '.format(100*diff)
+                    print 'now    {0:<10} {1:<8.3E} {2:<8.2f} {3:<8.2f} {4:<10} {5:<30}'.format(dsid,xsec,kfac,feff,name,description)
+                    print 'pre    {0:<10} {1:<8.3E} {2:<8.2f} {3:<8.2f} {4:<10} {5:<30}'.format(*itm_a)
+                    continue
                     
     def fill_db_xsection(self,db,table_name,path_to_xsection):
         cursor = db.cursor()
@@ -91,13 +96,14 @@ class SampleData(object):
             fEff = float(splitted[3])
             name = splitted[4]
             desc = splitted[5]
+
             cursor.execute('''
-                INSERT INTO XSECTIONS({0:})\
+                INSERT INTO {7:}({0:})\
                 VALUES({1:},{2:},{3:},{4},"{5}","{6}");\
-                '''.format(keys,dsid,xsec,kFac,fEff,name,desc))
+                '''.format(keys,dsid,xsec,kFac,fEff,name,desc,table_name))
         db.commit()
 
-    def update_db_xsection(self):
+
 
     def initialize_db_sample(self):        
         cursor = self.DB_SAMPLE.cursor()
@@ -157,7 +163,6 @@ class SampleData(object):
             FSorAFii = 'AFii'
         else:
             FSorAFii = 'FS'
-        if tag[-1] == '_'
         return dsid,tag,ptag,FSorAFii
 
     def add_is_used(self):
