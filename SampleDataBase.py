@@ -6,7 +6,6 @@ DSID | Name of CxAOD sampes | Name in hist | Descriptions | p tag | full tag | P
 import os,re
 import sqlite3 as sql
 
-
 class SampleData(object):
     def __init__(self,debug=True):
         self.debug = debug
@@ -29,9 +28,9 @@ class SampleData(object):
         self.update_xsection(xsection_ftag_pdf,flag='PDF')
         self.update_xsection(xsection_ftag_tp,flag='TP')
 
-    def update_xsection(self,xsection_name,flag=''):
+    def update_xsection(self,path_to_xsection,flag=''):
         alt_db = sql.connect(':memory:')
-        path_to_xsection = '/afs/cern.ch/work/c/chenc/HEP_pyLib/../XSections_FTAG_TP.txt'
+        #path_to_xsection = '/afs/cern.ch/work/c/chenc/HEP_pyLib/../XSections_FTAG_TP.txt'
         self.fill_db_xsection(alt_db,'XSECTIONS_ATL',path_to_xsection,flag=flag)
         c_a = self.DB_XSECTION.cursor()
         c_b = alt_db.cursor()
@@ -50,7 +49,7 @@ class SampleData(object):
                 ''',(dsid,))
             itms_a = c_a.fetchall()
             if len(itms_a)==0:
-                print dsid,name,description,'not exists, add it!'
+                print 'Add from {0:<5}: {1:<8} {2:<10} {3:<20} '.format(flag,dsid,name,description)
                 c_a.execute('''
                     INSERT INTO XSECTIONS({0:})\
                     VALUES(?,?,?,?,?,?);\
@@ -62,10 +61,11 @@ class SampleData(object):
                 total_xsec_b = xsec*kfac*feff
                 diff = 2.*abs((total_xsec_a-total_xsec_b)/(total_xsec_b+total_xsec_a))
                 if diff>0.01:
-                    print '---'
-                    print '{0:.2f}% '.format(100*diff)
-                    print '{6:<10}    {0:<10} {1:<8.3E} {2:<8.2f} {3:<8.2f} {4:<10} {5:<30}'.format(*(itm_a+['init']))
-                    print '{6:<10}    {0:<10} {1:<8.3E} {2:<8.2f} {3:<8.2f} {4:<10} {5:<30}'.format(dsid,xsec,kfac,feff,name,description,flag)
+                    tempFMT = '{0:<10}  tot: {1:<8.3E} | {2:<8.3E} {3:<8.2f} {4:<8.2f} {5:<10} {6:<30}'
+                    print '\n---'
+                    print '{0:}  {1:.2f}% '.format(dsid,100*diff)
+                    print tempFMT.format(*(('init',total_xsec_a)+itm_a[1:]))
+                    print tempFMT.format(flag,total_xsec_b,xsec,kfac,feff,name,description)
                     
                     continue
                     
@@ -78,8 +78,8 @@ class SampleData(object):
                 XSection REAL NOT NULL,
                 kFactor REAL DEFAULT 1,
                 fEff REAL DEFAULT 1,
-                Name TEXT,
-                Description TEXT
+                Name TEXT DEFAULT "",
+                Description TEXT DEFAULT ""
             );'''.format(table_name))
         
         with open(path_to_xsection,'read') as f:
@@ -95,7 +95,7 @@ class SampleData(object):
                 splitted = splitted[1:]
 
             if flag == 'PDF':
-                if len(splitted)<5:
+                if len(splitted)<4:
                     print 'skip (in PDF)',splitted
                     continue
                 sKEYS = ','.join(['DSID','XSection','kFactor','Description'])
@@ -122,7 +122,7 @@ class SampleData(object):
                     INSERT INTO {0:}({1:})\
                     VALUES(?,?,?,?,?,?);
                     '''.format(table_name,sKEYS),(dsid,xsec,kFac,fEff,name,desc))
-            db.commit()
+        db.commit()
 
     def initialize_db_sample(self):
         cursor = self.DB_SAMPLE.cursor()
@@ -169,10 +169,11 @@ class SampleData(object):
                     hname,description = res[0]
                 values = [dsid,f,hname,description,period,tag,ptag,FSorAFii]
                 cursor = self.DB_SAMPLE.cursor()
+                sKEYS = ','.join(KEYS)
                 cursor.execute('''
                     INSERT INTO SAMPLES({0:})\
-                    VALUES({1:},"{2:}","{3:}","{4}","{5}","{6}","{7}","{8:}");\
-                    '''.format(*([','.join(KEYS)]+values)))
+                    VALUES(?,?,?,?,?,?,?,?);\
+                    '''.format(sKEYS),values)
         self.DB_SAMPLE.commit()
 
     def parse_sample_name(self,sample_name):
@@ -193,5 +194,3 @@ sd = SampleData()
 sd.initialize_db_xsection()
 sd.update_db_xsection()
 sd.initialize_db_sample()
-
-#sd.update_db_sample_pdfsample_table()
