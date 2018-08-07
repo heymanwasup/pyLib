@@ -17,7 +17,8 @@ import operator
 from copy import deepcopy,copy
 import argparse
 import inspect
-
+import sqlite3 as sql
+import csv
 class IOHandler(object):
     def __new__(cls,*args,**kw):        
         obj = super(type(cls),cls).__new__(cls,*args,**kw)
@@ -368,6 +369,152 @@ def Searcher(data,nameMap={}):
         return None
     return Search
 
+def DumpToCSV(inDB,outCSV,table_name):
+  if isinstance(inDB, str):
+    inDB = sql.connect(inDB)
+  c = inDB.cursor()
+  c.execute('''
+    SELECT * FROM %s
+    '''%(table_name))
+  header = list(map(lambda x:x[0],c.description))
+  with open(outCSV,'w') as f:
+    writer = csv.writer(f)
+    writer.writerow(header)
+    writer.writerows(c)
+  print 'Created:\n'
+  print '\t',outCSV
+
+class Hadd(object):
+
+  def __init__(self,nfilesPerJob,driver,name):
+    self.nfilesPerJob = nfilesPerJob    
+    self.driver = driver
+    self.name = name
+
+  def submit(self,output_file,input_dir=None,input_files=None,regex=None):
+    mission_time = time.time()
+    self.temp_dir = '/tmp/chenc_%s_%s'%(self.name,mission_time)
+    mkdir(self.temp_dir)    
+    samples = self.get_samples(input_dir=input_dir,input_files=input_files,regex=regex)
+  
+    tree = {}      
+    tree = self.make_jobs_tree(samples)
+    jobs_tree_name = './jobs_tree_%s.json'%(name)
+
+    with open(jobs_tree_name,'w') as f:
+      DumpToJson(tree,f)
+    self.submit_jobs(jobs_tree_name)
+
+  def make_jobs_tree(self,samples,layer=0):    
+    N = len(samples)
+    m = self.nfilesPerJob
+    alter_m = int(math.ceil(math.sqrt(N)))
+    if N<m:
+      return samples
+    elif alter_m < m:
+      tree = {}
+      for n in range(alter_m):
+        tree['N%s_%s'%(layer+1,n)] = samples[n::alter_m]
+      return tree
+    else:
+      tree = {}
+      for n in range(m):
+        tree['N%s_%s'%(layer+1,n)] = self.make_jobs_tree(samples[n::alter_m],layer=layer+1)
+      return tree
+
+  def submit_jobs(jobs_tree_name):
+    if isinstance(jobs_tree_name,str):
+      tree = json_load(jobs_tree_name)    
+    
+    status = 0
+    while not finished:
+      finished = self.check_and_submit('N0',tree)
+      sleep(10)
+      print 'waiting'
+    print 'finished'
+  '''
+  status:
+    0->not submit
+    1->submitted, but not finished
+    2->finished    
+  '''
+  def check_and_submit(self,node,tree):
+    status = self.check_job(node)
+    if status == 2: # all finished
+      return True
+    elif status == 1: # all submitted
+      return False
+    else: #not submit
+      if isinstance(tree,dict):#not leaf node
+        if self.check_jobs(tree.keys()): #sub jobs all finished, submit this job
+          self.submit_job(node,tree.keys()) #sub jobs all finished, submit this job
+          return False
+        else: #check and submit all sub jobs
+          sub_finished = True
+          for sub_node,sub_tree in tree.iteritems():
+            sub_finished &= self.check_and_submit(sub_node)
+          return sub_finished
+      else:#leaf node, submit it
+        self.submit_job(node,tree)
+        return False
+
+  def get_samples(self,input_dir=None,input_files=None,regex=None):
+    samples = []
+    if input_dir != None and regex != None and input_files == None:
+      files = os.listdir(input_dir)
+      for f in files:
+        if os.path.isfile(f) and re.match(regex,f):
+          samples.append(os.path.join(input_dir,f))
+    elif input_files!=None and input_dir==None and regex==None:
+      samples = input_files
+    elif input_files!=None and input_dir!=None and regex==None:
+      for f in input_files:
+        samples.append(os.path.join(input_dir,f))
+    else:
+      raise ValueError(input_dir,input_files,regex)
+    samples_link = []
+    for n,sample in enumerate(samples):
+      commands.getstatusoutput('ln -s %s %s/L%s.root'%(sample,self.temp_dir,n))
+      samples_link.append('L%s'%(n))
+
+    return samples_link
+
+  def check_job(self,name):
+    fname = self.path.join(self.temp_dir,name+'.root')
+    submit_status = commands.getstatusoutput('bjobs -J %s'%(name))[1]
+    if os.path.isfile(fname):
+      return 2
+    elif 'not found' in submit_status:
+      return 0
+    else:
+      return 1
+
+  def check_jobs(self,names):
+    finished = True
+    if len(names)==0:
+      raise ValueError()
+    else:
+      for name in names:
+        finished &= self.check_job(name)
+    return finished
+
+  def submit_job(self,node,keys):
+    in_files = ' '.join(map('{0:}.root'.format(k),keys))
+    sub_shell = '''
+#!/bin/bash
+echo "start {0:}"
+cd {1:}
+hadd -f sub/{0:}.root {2:}
+mv sub/{0:}.root .
+    '''.format(node,self.temp_dir,in_files)
+    shell_path = '{0:}/sub/submit_{1:}.sh'.format(self.temp_dir,node)
+    with open(shell_path,'w') as f:
+      print >>f,sub_shell
+    cmd = 'bsub -J {0:}_{1:} -o {2:}/sub/{1:}.out -e {2:}/sub/{1:}.err -q 1nh {3:}'\
+    .format(self.name,node,self.temp_dir,shell_path)    
+    print cmd
+    #commands.getstatusoutput(cmd)
+
 def main():
   Origin = {
     'L1':{
@@ -386,6 +533,8 @@ def main():
   }
   res = MergeDict_recursive(Origin, Extern)
   print res
+
+
 
 if __name__ == '__main__':
   main()
