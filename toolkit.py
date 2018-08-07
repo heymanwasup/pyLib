@@ -386,14 +386,13 @@ def DumpToCSV(inDB,outCSV,table_name):
 
 class Hadd(object):
 
-  def __init__(self,nfilesPerJob,driver,name):
-    self.nfilesPerJob = nfilesPerJob    
-    self.driver = driver
+  def __init__(self,nfilesPerJob,name):
+    self.nfilesPerJob = nfilesPerJob        
     self.name = name
 
   def submit(self,output_file,input_dir=None,input_files=None,regex=None):
     mission_time = time.time()
-    self.temp_dir = '/tmp/chenc_%s_%s'%(self.name,mission_time)
+    self.temp_dir = '/tmp/chenc_%s_%s'%(self.name,mission_time)    
     mkdir(self.temp_dir)    
     samples = self.get_samples(input_dir=input_dir,input_files=input_files,regex=regex)
   
@@ -404,6 +403,7 @@ class Hadd(object):
     with open(jobs_tree_name,'w') as f:
       DumpToJson(tree,f)
     self.submit_jobs(jobs_tree_name)
+    commands.getstatusoutput('mv {0:}/N0.root {1:}'.format(self.temp_dir,output_file))
 
   def make_jobs_tree(self,samples,layer=0):    
     N = len(samples)
@@ -427,10 +427,12 @@ class Hadd(object):
       tree = json_load(jobs_tree_name)    
     
     status = 0
+    print 'working on directory:\n\t' + self.temp_dir
+  
     while not finished:
       finished = self.check_and_submit('N0',tree)
       sleep(10)
-      print 'waiting'
+      print 'waiting'    
     print 'finished'
   '''
   status:
