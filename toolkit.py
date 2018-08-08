@@ -389,24 +389,48 @@ class Hadd(object):
   def __init__(self,nfilesPerJob,name):
     self.nfilesPerJob = nfilesPerJob        
     self.name = name
+    
+  
+  def count_tree(self,tree,res=[0]):
+    if isinstance(tree,list):
+      res[0] += len(tree)
+    else:
+      for k,v in tree.iteritems():
+        self.count_tree(v,res)       
 
-  def submit(self,output_file,input_dir=None,input_files=None,regex=None):
-    mission_time = time.time()
-    self.temp_dir = '/tmp/chenc_%s_%s'%(self.name,mission_time)    
-    mkdir(self.temp_dir)    
+  def submit(self,output_file,input_dir=None,input_files=None,regex=None,mission_time=None):
+
+    self.initialize_temp_dir(mission_time)
     samples = self.get_samples(input_dir=input_dir,input_files=input_files,regex=regex)
   
-    tree = {}      
+    
     tree = self.make_jobs_tree(samples)
-    jobs_tree_name = './jobs_tree_%s.json'%(name)
+    jobs_tree_name = './{0:}/jobs_tree.json'.format(self.submit_dir)
 
     with open(jobs_tree_name,'w') as f:
       DumpToJson(tree,f)
-    self.submit_jobs(jobs_tree_name)
-    commands.getstatusoutput('mv {0:}/N0.root {1:}'.format(self.temp_dir,output_file))
+        
+    self.submit_jobs(jobs_tree_name,output_file)
 
-  def make_jobs_tree(self,samples,layer=0):    
-    N = len(samples)
+  def submit_one_more_time(self,output_file,jobs_tree_name,mission_time=None):
+    self.initialize_temp_dir(mission_time)
+    self.submit_jobs(jobs_tree_name, output_file)
+
+  def initialize_temp_dir(self,mission_time=None):
+    if mission_time == None:
+      self.mission_time = time.time()
+    else:
+      self.mission_time = mission_time
+
+    self.temp_dir = '/eos/atlas/user/c/chenc/temp/%s_%s'%(self.name,self.mission_time)
+    self.submit_dir = './submit_%s'%(self.name)
+    commands.getstatusoutput('touch ./{0:}/{1:}.submiited'.format(self.submit_dir,self.mission_time))
+    mkdir(self.temp_dir)
+    mkdir(self.temp_dir+'/sub')        
+    mkdir(self.submit_dir)
+
+  def make_jobs_tree(self,samples,up_node='N0'):    
+    N = len(samples)    
     m = self.nfilesPerJob
     alter_m = int(math.ceil(math.sqrt(N)))
     if N<m:
@@ -414,26 +438,30 @@ class Hadd(object):
     elif alter_m < m:
       tree = {}
       for n in range(alter_m):
-        tree['N%s_%s'%(layer+1,n)] = samples[n::alter_m]
+        node_name = '%s_N%s'%(up_node,n)
+        tree[node_name] = samples[n::alter_m]
       return tree
     else:
       tree = {}
       for n in range(m):
-        tree['N%s_%s'%(layer+1,n)] = self.make_jobs_tree(samples[n::alter_m],layer=layer+1)
+        node_name = '%s_N%s'%(up_node,n)
+        tree[node_name] = self.make_jobs_tree(samples[n::m],up_node=node_name)
       return tree
 
-  def submit_jobs(jobs_tree_name):
-    if isinstance(jobs_tree_name,str):
-      tree = json_load(jobs_tree_name)    
-    
+  def submit_jobs(self,jobs_tree_name,output_file):    
+
+    tree = json_load(jobs_tree_name)        
     status = 0
     print 'working on directory:\n\t' + self.temp_dir
   
+    finished = False
     while not finished:
       finished = self.check_and_submit('N0',tree)
-      sleep(10)
+      time.sleep(20)
       print 'waiting'    
     print 'finished'
+    commands.getstatusoutput('mv {0:}/N0.root {1:} && rm -rf {0:}'\
+    .format(self.temp_dir,output_file))
   '''
   status:
     0->not submit
@@ -444,28 +472,30 @@ class Hadd(object):
     status = self.check_job(node)
     if status == 2: # all finished
       return True
-    elif status == 1: # all submitted
+    elif status == 1: # all sub-tasks submitted
       return False
     else: #not submit
       if isinstance(tree,dict):#not leaf node
         if self.check_jobs(tree.keys()): #sub jobs all finished, submit this job
+          print 'all sub jobs finished. submit ',node,'\n'
           self.submit_job(node,tree.keys()) #sub jobs all finished, submit this job
           return False
         else: #check and submit all sub jobs
           sub_finished = True
           for sub_node,sub_tree in tree.iteritems():
-            sub_finished &= self.check_and_submit(sub_node)
+            sub_finished &= self.check_and_submit(sub_node,sub_tree)
           return sub_finished
       else:#leaf node, submit it
+        print 'not submitted leaf node, submit ',node,'\n'
         self.submit_job(node,tree)
         return False
 
   def get_samples(self,input_dir=None,input_files=None,regex=None):
-    samples = []
+    samples = []    
     if input_dir != None and regex != None and input_files == None:
       files = os.listdir(input_dir)
-      for f in files:
-        if os.path.isfile(f) and re.match(regex,f):
+      for f in files:        
+        if os.path.isfile(os.path.join(input_dir,f)) and re.match(regex,f):
           samples.append(os.path.join(input_dir,f))
     elif input_files!=None and input_dir==None and regex==None:
       samples = input_files
@@ -478,18 +508,21 @@ class Hadd(object):
     for n,sample in enumerate(samples):
       commands.getstatusoutput('ln -s %s %s/L%s.root'%(sample,self.temp_dir,n))
       samples_link.append('L%s'%(n))
-
     return samples_link
 
   def check_job(self,name):
-    fname = self.path.join(self.temp_dir,name+'.root')
-    submit_status = commands.getstatusoutput('bjobs -J %s'%(name))[1]
+    fname = os.path.join(self.temp_dir,name+'.root')
+    submit_status = commands.getstatusoutput('bjobs -J %s_%s'%(self.name,name))[1]
+    status = 0
+    #print 'check',name,fname
     if os.path.isfile(fname):
-      return 2
+      status = 2      
     elif 'not found' in submit_status:
-      return 0
+      status = 0
     else:
-      return 1
+      status = 1
+    
+    return status
 
   def check_jobs(self,names):
     finished = True
@@ -497,25 +530,34 @@ class Hadd(object):
       raise ValueError()
     else:
       for name in names:
-        finished &= self.check_job(name)
+        finished &= (self.check_job(name)==2)
     return finished
 
   def submit_job(self,node,keys):
-    in_files = ' '.join(map('{0:}.root'.format(k),keys))
-    sub_shell = '''
-#!/bin/bash
-echo "start {0:}"
-cd {1:}
-hadd -f sub/{0:}.root {2:}
-mv sub/{0:}.root .
-    '''.format(node,self.temp_dir,in_files)
-    shell_path = '{0:}/sub/submit_{1:}.sh'.format(self.temp_dir,node)
-    with open(shell_path,'w') as f:
-      print >>f,sub_shell
-    cmd = 'bsub -J {0:}_{1:} -o {2:}/sub/{1:}.out -e {2:}/sub/{1:}.err -q 1nh {3:}'\
-    .format(self.name,node,self.temp_dir,shell_path)    
-    print cmd
-    #commands.getstatusoutput(cmd)
+    if len(keys)==1:
+      cmd = 'cp -s {0:}/{1:}.root {0:}/{2:}.root'.format(self.temp_dir,keys[0],node)
+      #print cmd
+      print commands.getstatusoutput(cmd)[1]
+    else:
+      in_files = ' '.join(map('{0:}.root'.format,keys))
+      sub_shell = '''
+  #!/bin/bash
+  echo "start {0:}"
+  cd {1:}
+  hadd -f sub/{0:}.root {2:}
+  mv sub/{0:}.root .
+      '''.format(node,self.temp_dir,in_files)
+      
+      shell_path = './{0:}/submit_{1:}.sh'.format(self.submit_dir,node)
+      with open(shell_path,'w') as f:
+        print >>f,sub_shell
+      os.chmod(shell_path,0o777)
+      cmd = 'bsub -J {0:}_{1:} -o ./sub/{1:}.out -e ./sub/{1:}.err -q 1nh {3:}'\
+      .format(self.name,node,self.temp_dir,os.path.abspath(shell_path))      
+      #print cmd
+      print commands.getstatusoutput(cmd)[1]      
+    
+
 
 def main():
   Origin = {
